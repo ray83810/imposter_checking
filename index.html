@@ -1104,6 +1104,11 @@
             const agent = row[colMap.agent] ? String(row[colMap.agent]).trim() : '';
             if (!agent) return;
             
+            // 排除 genai 相關的自動化機器人客服 (忽略大小寫)
+            if (agent.toLowerCase().includes('genai')) {
+                return;
+            }
+            
             // Normalize Direction
             const dirVal = row[colMap.direction] ? String(row[colMap.direction]).trim() : '';
             const isInbound = (dirVal.toLowerCase() === 'in' || dirVal.includes('進線') || dirVal.includes('In'));
