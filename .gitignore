@@ -1,0 +1,9 @@
+# Data Files (Contains sensitive customer MDNs and details)
+*.xlsx
+*.xls
+*.csv
+~$*
+
+# OS Files
+.DS_Store
+Thumbs.db

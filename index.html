@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客服異常操作分析工具 | Call Center Anomaly Analytics</title>
+    <meta name="description" content="專為客服中心設計的異常操作檢測工具，一鍵分析報表，揪出惡意掛斷電話逃避抽樣的異常行為。">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js and SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(22, 28, 45, 0.45);
+            --panel-bg-hover: rgba(22, 28, 45, 0.65);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-color-active: rgba(139, 92, 246, 0.4);
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            
+            --primary: #8b5cf6;
+            --primary-glow: rgba(139, 92, 246, 0.15);
+            --secondary: #06b6d4;
+            --secondary-glow: rgba(6, 182, 212, 0.15);
+            
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.15);
+            --success: #10b981;
+            
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+            padding: 2rem 1.5rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header Style */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+
+        .logo-area h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a78bfa, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-area p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-top: 0.2rem;
+        }
+
+        .status-badge {
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-muted);
+            box-shadow: 0 0 8px var(--text-muted);
+        }
+
+        .status-dot.active {
+            background-color: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        .status-dot.loading {
+            background-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        /* Glassmorphism Panel Card */
+        .glass-panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: var(--transition-smooth);
+        }
+
+        .glass-panel:hover {
+            background: var(--panel-bg-hover);
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        /* Upload Section */
+        .upload-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            background: rgba(255, 255, 255, 0.01);
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--primary);
+            background: rgba(139, 92, 246, 0.02);
+            box-shadow: 0 0 25px rgba(139, 92, 246, 0.1);
+        }
+
+        .upload-zone.dragover {
+            border-color: var(--secondary);
+            background: rgba(6, 182, 212, 0.05);
+            box-shadow: 0 0 30px rgba(6, 182, 212, 0.15);
+            transform: scale(1.01);
+        }
+
+        .upload-icon {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
+        }
+
+        .upload-zone h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .upload-zone p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Dashboard Overview Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--primary);
+        }
+
+        .metric-card.danger::before {
+            background: var(--danger);
+        }
+        
+        .metric-card.secondary::before {
+            background: var(--secondary);
+        }
+
+        .metric-title {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .metric-desc {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-top: 0.4rem;
+        }
+
+        /* Control Panel */
+        .control-panel {
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-left: 3px solid var(--primary);
+            padding-left: 0.75rem;
+            margin-bottom: 1rem;
+            width: 100%;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            min-width: 250px;
+            flex: 1;
+        }
+
+        .control-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-val-badge {
+            background: rgba(139, 92, 246, 0.15);
+            color: #c084fc;
+            padding: 0.1rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 700;
+        }
+
+        /* Custom Slider Style */
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            transition: var(--transition-smooth);
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--primary);
+            transition: var(--transition-smooth);
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 15px var(--primary);
+        }
+
+        /* Checkbox Switch */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+
+        .switch-input {
+            display: none;
+        }
+
+        .switch-slider {
+            width: 44px;
+            height: 22px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 9999px;
+            position: relative;
+            transition: var(--transition-smooth);
+            border: 1px solid var(--border-color);
+        }
+
+        .switch-slider::before {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: var(--text-secondary);
+            border-radius: 50%;
+            transition: var(--transition-smooth);
+        }
+
+        .switch-input:checked + .switch-slider {
+            background-color: var(--primary-glow);
+            border-color: var(--primary);
+        }
+
+        .switch-input:checked + .switch-slider::before {
+            transform: translateX(22px);
+            background-color: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+        }
+
+        .switch-label-text {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* Visualizations Section */
+        .analytics-section {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 1024px) {
+            .analytics-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-container {
+            height: 350px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Table Styling */
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 350px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background-color: rgba(15, 23, 42, 0.6);
+            color: var(--text-primary);
+            font-weight: 600;
+            padding: 0.75rem 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-bottom: 2px solid var(--border-color);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        tr {
+            transition: var(--transition-smooth);
+        }
+
+        tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .clickable-row {
+            cursor: pointer;
+        }
+        
+        .clickable-row.selected {
+            background-color: rgba(139, 92, 246, 0.12) !important;
+            border-left: 3px solid var(--primary);
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-danger {
+            background-color: var(--danger-glow);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .badge-warning {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        /* Detail Table Section */
+        .detail-section {
+            margin-top: 2.5rem;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .search-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.55rem 1rem;
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+            width: 300px;
+            transition: var(--transition-smooth);
+        }
+
+        .search-box:focus {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.15);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.55rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: var(--transition-smooth);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--text-secondary);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #7c3aed);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        /* Large Detail Table Wrapper */
+        .large-table-wrapper {
+            max-height: 500px;
+        }
+
+        .symptoms-cell {
+            max-width: 250px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: help;
+        }
+
+        .tooltip {
+            position: relative;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        /* Notification Toast */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid var(--primary);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            z-index: 999;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(8px);
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--danger); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header>
+        <div class="logo-area">
+            <h1>客服異常操作分析工具</h1>
+            <p>Call Center Anomaly Analytics Dashboard</p>
+        </div>
+        <div class="status-badge">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText">請上傳報表檔案</span>
+        </div>
+    </header>
+
+    <!-- Upload Zone -->
+    <div id="uploadZone" class="upload-zone">
+        <div class="upload-icon">📥</div>
+        <h3>拖曳 Excel 報表檔案至此處</h3>
+        <p>支援 .xlsx 格式 (系統自動產出之 0101-0620 等話務明細報表)</p>
+        <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">檔案只會在您的瀏覽器本機解析，不會上傳至任何伺服器</p>
+        <input type="file" id="fileInput" class="file-input" accept=".xlsx">
+    </div>
+
+    <!-- Main Dashboard Area (Hidden initially) -->
+    <div id="dashboardArea" style="display: none;">
+        
+        <!-- Controls & Metrics -->
+        <div style="display: grid; grid-template-columns: 1fr 2.5fr; gap: 1.5rem; margin-bottom: 2rem; align-items: stretch;">
+            
+            <!-- Rules Control Card -->
+            <div class="glass-panel" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 class="panel-title">檢測規則控制台</h3>
+                    
+                    <div class="control-group" style="margin-top: 1rem;">
+                        <div class="control-label">
+                            <span>通話秒數閾值 (小於)</span>
+                            <span class="control-val-badge"><span id="thresholdVal">10</span> 秒</span>
+                        </div>
+                        <input type="range" id="thresholdSlider" class="slider" min="1" max="30" value="10">
+                    </div>
+                    
+                    <label class="switch-container">
+                        <input type="checkbox" id="agentEndedSwitch" class="switch-input" checked>
+                        <span class="switch-slider"></span>
+                        <span class="switch-label-text">限掛斷狀態為 Agent Ended</span>
+                    </label>
+
+                    <label class="switch-container">
+                        <input type="checkbox" id="bypassReasonSwitch" class="switch-input">
+                        <span class="switch-slider"></span>
+                        <span class="switch-label-text" title="打勾後，將只篩選 session_reason 為 '未提供服務'、次要原因為 '斷線' 或 空白 的案件">僅過濾抽樣排除類型</span>
+                    </label>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <button id="reanalyzeBtn" class="btn btn-primary" style="width: 100%; justify-content: center;">🔄 重新分析</button>
+                </div>
+            </div>
+
+            <!-- Overview Metrics Grid -->
+            <div class="dashboard-grid">
+                <div class="glass-panel metric-card secondary">
+                    <div class="metric-title">總話務量</div>
+                    <div id="metricTotalCalls" class="metric-value">-</div>
+                    <div class="metric-desc">報表中包含的總通話筆數</div>
+                </div>
+                <div class="glass-panel metric-card secondary">
+                    <div class="metric-title">總進線量 (Inbound)</div>
+                    <div id="metricInboundCalls" class="metric-value">-</div>
+                    <div class="metric-desc">Direction = "In" 的通話數</div>
+                </div>
+                <div class="glass-panel metric-card danger">
+                    <div class="metric-title">檢測異常數</div>
+                    <div id="metricAnomalies" class="metric-value">-</div>
+                    <div class="metric-desc">符合上方特徵之異常通話</div>
+                </div>
+                <div class="glass-panel metric-card danger">
+                    <div class="metric-title">整體異常率</div>
+                    <div id="metricAnomalyRate" class="metric-value">-</div>
+                    <div class="metric-desc">異常數 / 總進線量</div>
+                </div>
+                <div class="glass-panel metric-card">
+                    <div class="metric-title">重災區客服</div>
+                    <div id="metricWorstAgent" class="metric-value" style="font-size: 1.35rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; margin-top: 0.3rem;">-</div>
+                    <div id="metricWorstRate" class="metric-desc">異常率：-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts and Leaderboard -->
+        <div class="analytics-section">
+            <!-- Left: Leaderboard Chart -->
+            <div class="glass-panel">
+                <h3 class="panel-title">客服異常率排行榜</h3>
+                <div class="chart-container">
+                    <canvas id="leaderboardChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Right: Leaderboard Table -->
+            <div class="glass-panel" style="display: flex; flex-direction: column;">
+                <h3 class="panel-title">客服數據總覽 (點擊整行可篩選明細)</h3>
+                <div class="table-wrapper" style="flex-grow: 1;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>客服人員</th>
+                                <th class="text-right">總進線數</th>
+                                <th class="text-right">異常掛斷數</th>
+                                <th class="text-right">異常率</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agentTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail Table Explorer -->
+        <div class="glass-panel detail-section">
+            <div class="detail-header">
+                <h3 class="panel-title" style="margin-bottom: 0; width: auto;">異常案件明細 <span id="detailCount" style="color: var(--primary); font-size: 0.95rem; font-weight: normal; margin-left: 0.5rem;"></span></h3>
+                
+                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                    <span id="activeFilterBadge" style="display: none; background: rgba(139, 92, 246, 0.15); border: 1px solid var(--primary); color: #c084fc; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                        <span>篩選客服: <strong id="filterAgentName"></strong></span>
+                        <span id="clearAgentFilter" style="cursor: pointer; font-weight: bold; color: var(--danger);">×</span>
+                    </span>
+                    
+                    <input type="text" id="detailSearch" class="search-box" placeholder="搜尋 客服 / 電話號碼 / 紀錄內容...">
+                    
+                    <div class="action-buttons">
+                        <button id="exportCsvBtn" class="btn">📤 匯出 CSV 報表</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="table-wrapper large-table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">日期</th>
+                            <th style="width: 90px;">開始時間</th>
+                            <th style="width: 100px;">客服人員</th>
+                            <th style="width: 80px;">通話時長</th>
+                            <th style="width: 90px;">掛斷狀態</th>
+                            <th style="width: 100px;">話後代碼</th>
+                            <th style="width: 100px;">電話 (MDN)</th>
+                            <th style="width: 120px;">主要原因</th>
+                            <th style="width: 120px;">次要原因</th>
+                            <th>服務紀錄 (Symptoms)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailTableBody">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="glass-panel empty-state">
+        <div class="empty-state-icon">📊</div>
+        <p>暫無分析數據。請在上方拖放或選擇一個客服話務明細 Excel 報表以開始分析。</p>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast">
+    <span id="toastIcon">💡</span>
+    <span id="toastMessage">這是提示訊息</span>
+</div>
+
+<script>
+    // State variables
+    let rawWorkbook = null;
+    let excelRows = [];
+    let headers = [];
+    let colMap = {};
+    let activeFilterAgent = null;
+    let anomalyData = [];
+    let agentSummaryData = [];
+    let chartInstance = null;
+
+    // DOM elements
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const dashboardArea = document.getElementById('dashboardArea');
+    const emptyState = document.getElementById('emptyState');
+    
+    const thresholdSlider = document.getElementById('thresholdSlider');
+    const thresholdVal = document.getElementById('thresholdVal');
+    const agentEndedSwitch = document.getElementById('agentEndedSwitch');
+    const bypassReasonSwitch = document.getElementById('bypassReasonSwitch');
+    const reanalyzeBtn = document.getElementById('reanalyzeBtn');
+    
+    const metricTotalCalls = document.getElementById('metricTotalCalls');
+    const metricInboundCalls = document.getElementById('metricInboundCalls');
+    const metricAnomalies = document.getElementById('metricAnomalies');
+    const metricAnomalyRate = document.getElementById('metricAnomalyRate');
+    const metricWorstAgent = document.getElementById('metricWorstAgent');
+    const metricWorstRate = document.getElementById('metricWorstRate');
+    
+    const agentTableBody = document.getElementById('agentTableBody');
+    const detailTableBody = document.getElementById('detailTableBody');
+    const detailCount = document.getElementById('detailCount');
+    const detailSearch = document.getElementById('detailSearch');
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    
+    const activeFilterBadge = document.getElementById('activeFilterBadge');
+    const filterAgentName = document.getElementById('filterAgentName');
+    const clearAgentFilter = document.getElementById('clearAgentFilter');
+
+    // UI event listeners
+    uploadZone.addEventListener('click', () => fileInput.click());
+    
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            handleFileSelect(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files[0]);
+        }
+    });
+
+    thresholdSlider.addEventListener('input', (e) => {
+        thresholdVal.textContent = e.target.value;
+    });
+
+    reanalyzeBtn.addEventListener('click', () => {
+        if (excelRows.length > 0) {
+            analyzeData();
+            showToast("✅ 分析參數已更新！", "success");
+        }
+    });
+
+    detailSearch.addEventListener('input', () => {
+        renderDetailsTable();
+    });
+
+    clearAgentFilter.addEventListener('click', () => {
+        setAgentFilter(null);
+    });
+
+    exportCsvBtn.addEventListener('click', () => {
+        exportAnomaliesToCsv();
+    });
+
+    // Helper functions
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const icon = document.getElementById('toastIcon');
+        const msg = document.getElementById('toastMessage');
+        
+        toast.className = 'toast show ' + type;
+        icon.textContent = type === 'success' ? '✅' : (type === 'error' ? '❌' : '💡');
+        msg.textContent = message;
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3000);
+    }
+
+    function setStatus(text, type = 'default') {
+        statusText.textContent = text;
+        statusDot.className = 'status-dot';
+        if (type === 'success') statusDot.classList.add('active');
+        if (type === 'loading') statusDot.classList.add('loading');
+    }
+
+    // Try to find the actual header key case-insensitively and fuzzy-matched
+    function findHeaderKey(headers, possibleNames) {
+        for (let header of headers) {
+            if (!header) continue;
+            let h = String(header).trim().toLowerCase();
+            for (let possible of possibleNames) {
+                if (h === possible.toLowerCase() || h.includes(possible.toLowerCase())) {
+                    return header;
+                }
+            }
+        }
+        return null;
+    }
+
+    // Process file select
+    function handleFileSelect(file) {
+        if (!file.name.endsWith('.xlsx')) {
+            showToast("❌ 格式不支援，請上傳 .xlsx 檔案！", "error");
+            return;
+        }
+
+        setStatus(`正在讀取檔案 ${file.name}...`, 'loading');
+        showToast("⏳ 檔案讀取中，請稍候...", "info");
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                rawWorkbook = workbook;
+                
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // Convert to array of arrays first to examine headers
+                const sheetRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                if (sheetRows.length === 0) {
+                    throw new Error("工作表內容為空！");
+                }
+                
+                headers = sheetRows[0];
+                excelRows = XLSX.utils.sheet_to_json(worksheet);
+                
+                // Establish column mapping using fuzzy search
+                colMap = {
+                    direction: findHeaderKey(headers, ['Direction', '通話方向', '呼叫方向']),
+                    talkTime: findHeaderKey(headers, ['Talk', '通話時間', '通話時長', 'Talkⓒ']),
+                    status: findHeaderKey(headers, ['STATUS', '狀態', '通話狀態']),
+                    agent: findHeaderKey(headers, ['AGENT', '客服人員', '專員']),
+                    date: findHeaderKey(headers, ['Date', '日期']),
+                    startTime: findHeaderKey(headers, ['START_TIME', '開始時間', '接通時間']),
+                    wrapUp: findHeaderKey(headers, ['WRAP_UP_CODE', '話後代碼', '話後代號']),
+                    mdn: findHeaderKey(headers, ['MDN', '電話號碼', '手機號碼', '電話']),
+                    reason: findHeaderKey(headers, ['session_reason', 'Reason', '主要原因', '案件原因']),
+                    subReason: findHeaderKey(headers, ['session_sub_reason', '次要原因', '次要案件原因']),
+                    symptoms: findHeaderKey(headers, ['symptoms', '服務紀錄', '備註'])
+                };
+
+                // Validate critical columns
+                if (!colMap.direction || !colMap.talkTime || !colMap.status || !colMap.agent) {
+                    console.log("Column Mapping details:", colMap);
+                    throw new Error("找不到必要欄位，請確認 Excel 包含：方向 (Direction)、通話時長、掛斷狀態 (STATUS)、客服專員 (AGENT)。");
+                }
+
+                setStatus(`解析成功，共 ${excelRows.length} 筆資料`, 'success');
+                showToast("🎉 報表載入成功！", "success");
+                
+                // Show dashboard, hide empty state
+                dashboardArea.style.display = 'block';
+                emptyState.style.display = 'none';
+                
+                // Reset filter
+                setAgentFilter(null);
+                
+                // Run analysis
+                analyzeData();
+                
+            } catch (err) {
+                console.error(err);
+                setStatus("解析失敗", "default");
+                showToast("❌ 解析出錯: " + err.message, "error");
+            }
+        };
+        
+        reader.readAsArrayBuffer(file);
+    }
+
+    // Anomaly analysis engine
+    function analyzeData() {
+        const threshold = parseInt(thresholdSlider.value);
+        const limitAgentEnded = agentEndedSwitch.checked;
+        const limitBypassReason = bypassReasonSwitch.checked;
+        
+        let totalCalls = excelRows.length;
+        let inboundCalls = 0;
+        anomalyData = [];
+        
+        // Agent metrics aggregation
+        const agentStats = {};
+        
+        excelRows.forEach(row => {
+            const agent = row[colMap.agent] ? String(row[colMap.agent]).trim() : '';
+            if (!agent) return;
+            
+            // Normalize Direction
+            const dirVal = row[colMap.direction] ? String(row[colMap.direction]).trim() : '';
+            const isInbound = (dirVal.toLowerCase() === 'in' || dirVal.includes('進線') || dirVal.includes('In'));
+            
+            if (isInbound) {
+                inboundCalls++;
+                
+                if (!agentStats[agent]) {
+                    agentStats[agent] = { totalIn: 0, anomalies: 0 };
+                }
+                agentStats[agent].totalIn++;
+                
+                // Extract metrics
+                let talkVal = row[colMap.talkTime];
+                let talkTime = 99999;
+                if (talkVal !== undefined && talkVal !== null) {
+                    talkTime = parseFloat(talkVal);
+                }
+                
+                const statusVal = row[colMap.status] ? String(row[colMap.status]).trim() : '';
+                const isAgentEnded = (statusVal === 'Agent Ended' || statusVal.toLowerCase() === 'agent ended');
+                
+                // Check if fits anomaly rule
+                let isAnomaly = false;
+                
+                // 1. Core Rule: Short talk time
+                const isShortCall = talkTime < threshold;
+                
+                // 2. Hang up checking
+                const isCorrectHangup = limitAgentEnded ? isAgentEnded : true;
+                
+                // 3. Reason checking (exclusion list: "未提供服務" / "斷線" / empty)
+                let isCorrectReason = true;
+                if (limitBypassReason) {
+                    const reason = row[colMap.reason] ? String(row[colMap.reason]).trim() : '';
+                    const subReason = row[colMap.subReason] ? String(row[colMap.subReason]).trim() : '';
+                    const isEmpty = (!reason && !subReason);
+                    const isNoService = (reason.includes("未提供") || subReason.includes("斷線"));
+                    isCorrectReason = (isEmpty || isNoService);
+                }
+                
+                if (isShortCall && isCorrectHangup && isCorrectReason) {
+                    isAnomaly = true;
+                }
+                
+                if (isAnomaly) {
+                    anomalyData.push(row);
+                    agentStats[agent].anomalies++;
+                }
+            }
+        });
+        
+        // Update upper Metrics
+        metricTotalCalls.textContent = totalCalls.toLocaleString();
+        metricInboundCalls.textContent = inboundCalls.toLocaleString();
+        metricAnomalies.textContent = anomalyData.length.toLocaleString();
+        
+        const overallRate = inboundCalls > 0 ? (anomalyData.length / inboundCalls * 100) : 0;
+        metricAnomalyRate.textContent = `${overallRate.toFixed(2)}%`;
+        
+        // Generate Agent Breakdown
+        agentSummaryData = [];
+        let worstAgentName = '-';
+        let worstRateValue = -1;
+        
+        for (let agent in agentStats) {
+            const stats = agentStats[agent];
+            const rate = stats.totalIn > 0 ? (stats.anomalies / stats.totalIn * 100) : 0;
+            
+            agentSummaryData.push({
+                agent: agent,
+                totalIn: stats.totalIn,
+                anomalies: stats.anomalies,
+                rate: rate
+            });
+            
+            // Track worst agent (only consider those with at least 5 inbound calls to avoid outliers)
+            if (stats.totalIn >= 5 && rate > worstRateValue) {
+                worstRateValue = rate;
+                worstAgentName = agent;
+            }
+        }
+        
+        // Sort by anomaly rate descending
+        agentSummaryData.sort((a, b) => b.rate - a.rate);
+        
+        // Update worst agent metric
+        if (worstRateValue >= 0) {
+            metricWorstAgent.textContent = worstAgentName;
+            metricWorstAgent.title = worstAgentName;
+            metricWorstRate.textContent = `異常率：${worstRateValue.toFixed(2)}% (進線量 ${agentStats[worstAgentName].totalIn} 筆)`;
+        } else {
+            metricWorstAgent.textContent = '-';
+            metricWorstRate.textContent = '異常率：-';
+        }
+        
+        // Render elements
+        renderAgentTable();
+        renderChart();
+        renderDetailsTable();
+    }
+
+    // Render agent statistics table
+    function renderAgentTable() {
+        agentTableBody.innerHTML = '';
+        
+        agentSummaryData.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.className = 'clickable-row' + (activeFilterAgent === item.agent ? ' selected' : '');
+            tr.dataset.agent = item.agent;
+            
+            // Rate badge class
+            let badgeClass = 'badge';
+            if (item.rate > 10) {
+                badgeClass += ' badge-danger';
+            } else if (item.rate > 2) {
+                badgeClass += ' badge-warning';
+            }
+            
+            tr.innerHTML = `
+                <td style="font-weight: 600;">👤 ${item.agent}</td>
+                <td class="text-right">${item.totalIn}</td>
+                <td class="text-right" style="color: ${item.anomalies > 0 ? 'var(--danger)' : 'inherit'};">${item.anomalies}</td>
+                <td class="text-right">
+                    <span class="${badgeClass}">${item.rate.toFixed(2)}%</span>
+                </td>
+            `;
+            
+            tr.addEventListener('click', () => {
+                if (activeFilterAgent === item.agent) {
+                    setAgentFilter(null);
+                } else {
+                    setAgentFilter(item.agent);
+                }
+            });
+            
+            agentTableBody.appendChild(tr);
+        });
+    }
+
+    // Render Chart.js
+    function renderChart() {
+        const ctx = document.getElementById('leaderboardChart').getContext('2d');
+        
+        // Destroy existing chart
+        if (chartInstance) {
+            chartInstance.destroy();
+        }
+        
+        // Filter agents with Inbound >= 5 to make chart cleaner, or take top 10
+        const chartData = agentSummaryData
+            .filter(item => item.totalIn >= 5)
+            .slice(0, 10);
+            
+        const labels = chartData.map(item => item.agent);
+        const rates = chartData.map(item => parseFloat(item.rate.toFixed(2)));
+        const counts = chartData.map(item => item.anomalies);
+        
+        if (labels.length === 0) {
+            ctx.clearRect(0, 0, 100, 100);
+            return;
+        }
+
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '異常掛斷率 (%)',
+                    data: rates,
+                    backgroundColor: 'rgba(139, 92, 246, 0.65)',
+                    borderColor: 'rgba(139, 92, 246, 1)',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    hoverBackgroundColor: 'rgba(139, 92, 246, 0.85)',
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y', // Horizontal bars
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(context) {
+                                const index = context[0].dataIndex;
+                                return `異常件數: ${counts[index]} 筆`;
+                            }
+                        },
+                        backgroundColor: '#1e293b',
+                        titleColor: '#f8fafc',
+                        bodyColor: '#e2e8f0',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#94a3b8' },
+                        title: { display: true, text: '異常率 (%)', color: '#94a3b8' }
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: { color: '#f8fafc', font: { weight: 'bold' } }
+                    }
+                },
+                onClick: (e) => {
+                    const points = chartInstance.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+                    if (points.length) {
+                        const firstPoint = points[0];
+                        const agent = chartInstance.data.labels[firstPoint.index];
+                        if (activeFilterAgent === agent) {
+                            setAgentFilter(null);
+                        } else {
+                            setAgentFilter(agent);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Set Agent filter
+    function setAgentFilter(agent) {
+        activeFilterAgent = agent;
+        
+        if (agent) {
+            activeFilterBadge.style.display = 'flex';
+            filterAgentName.textContent = agent;
+        } else {
+            activeFilterBadge.style.display = 'none';
+        }
+        
+        // Highlight in Agent Table
+        const rows = agentTableBody.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (row.dataset.agent === agent) {
+                row.classList.add('selected');
+            } else {
+                row.classList.remove('selected');
+            }
+        });
+        
+        renderDetailsTable();
+    }
+
+    // Format Excel datetime objects/dates
+    function formatDate(cellValue) {
+        if (!cellValue) return '-';
+        if (cellValue instanceof Date) {
+            return cellValue.toISOString().slice(0, 10);
+        }
+        if (typeof cellValue === 'string') {
+            // Maybe contains datetime
+            return cellValue.split(' ')[0] || cellValue;
+        }
+        return String(cellValue);
+    }
+
+    function formatTime(cellValue) {
+        if (!cellValue) return '-';
+        if (cellValue instanceof Date) {
+            return cellValue.toTimeString().slice(0, 8);
+        }
+        if (typeof cellValue === 'string') {
+            return cellValue.includes(' ') ? cellValue.split(' ')[1] : cellValue;
+        }
+        return String(cellValue);
+    }
+
+    // Render detailed anomaly records table
+    function renderDetailsTable() {
+        detailTableBody.innerHTML = '';
+        
+        const searchQuery = detailSearch.value.toLowerCase().trim();
+        
+        // Filter anomaly data
+        let filtered = anomalyData;
+        
+        // 1. Agent Filter
+        if (activeFilterAgent) {
+            filtered = filtered.filter(row => {
+                const agent = row[colMap.agent] ? String(row[colMap.agent]).trim() : '';
+                return agent === activeFilterAgent;
+            });
+        }
+        
+        // 2. Search Query Filter
+        if (searchQuery) {
+            filtered = filtered.filter(row => {
+                const agent = row[colMap.agent] ? String(row[colMap.agent]).toLowerCase() : '';
+                const mdn = row[colMap.mdn] ? String(row[colMap.mdn]).toLowerCase() : '';
+                const symptoms = row[colMap.symptoms] ? String(row[colMap.symptoms]).toLowerCase() : '';
+                const reason = row[colMap.reason] ? String(row[colMap.reason]).toLowerCase() : '';
+                const subReason = row[colMap.subReason] ? String(row[colMap.subReason]).toLowerCase() : '';
+                
+                return agent.includes(searchQuery) || 
+                       mdn.includes(searchQuery) || 
+                       symptoms.includes(searchQuery) ||
+                       reason.includes(searchQuery) ||
+                       subReason.includes(searchQuery);
+            });
+        }
+        
+        // Update count badge
+        detailCount.textContent = `(符合條件：${filtered.length} 筆)`;
+        
+        if (filtered.length === 0) {
+            detailTableBody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <p>無符合當前篩選條件的異常紀錄。</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        filtered.forEach(row => {
+            const tr = document.createElement('tr');
+            
+            const rawDate = row[colMap.date];
+            const dateStr = formatDate(rawDate);
+            
+            const rawStartTime = row[colMap.startTime];
+            const timeStr = formatTime(rawStartTime);
+            
+            const agent = row[colMap.agent] || '-';
+            const talkTime = row[colMap.talkTime] !== undefined ? `${row[colMap.talkTime]} 秒` : '-';
+            const status = row[colMap.status] || '-';
+            const wrapUp = row[colMap.wrapUp] || '-';
+            const mdn = row[colMap.mdn] || '-';
+            const reason = row[colMap.reason] || '-';
+            const subReason = row[colMap.subReason] || '-';
+            const symptoms = row[colMap.symptoms] || '';
+            
+            // Format symptoms for rendering safely
+            const safeSymptoms = symptoms.replace(/"/g, '&quot;').replace(/\n/g, ' ');
+            
+            tr.innerHTML = `
+                <td>${dateStr}</td>
+                <td>${timeStr}</td>
+                <td style="font-weight: 500;">👤 ${agent}</td>
+                <td style="color: var(--danger); font-weight: 600;">⚡ ${talkTime}</td>
+                <td><span class="badge badge-danger">${status}</span></td>
+                <td>${wrapUp}</td>
+                <td>${mdn}</td>
+                <td>${reason}</td>
+                <td>${subReason}</td>
+                <td class="symptoms-cell" title="${safeSymptoms}">${symptoms}</td>
+            `;
+            
+            detailTableBody.appendChild(tr);
+        });
+    }
+
+    // Export selected/filtered anomalies to CSV
+    function exportAnomaliesToCsv() {
+        if (anomalyData.length === 0) {
+            showToast("❌ 沒有可供匯出的異常數據！", "error");
+            return;
+        }
+        
+        const searchQuery = detailSearch.value.toLowerCase().trim();
+        let filtered = anomalyData;
+        
+        if (activeFilterAgent) {
+            filtered = filtered.filter(row => {
+                const agent = row[colMap.agent] ? String(row[colMap.agent]).trim() : '';
+                return agent === activeFilterAgent;
+            });
+        }
+        
+        if (searchQuery) {
+            filtered = filtered.filter(row => {
+                const agent = row[colMap.agent] ? String(row[colMap.agent]).toLowerCase() : '';
+                const mdn = row[colMap.mdn] ? String(row[colMap.mdn]).toLowerCase() : '';
+                const symptoms = row[colMap.symptoms] ? String(row[colMap.symptoms]).toLowerCase() : '';
+                const reason = row[colMap.reason] ? String(row[colMap.reason]).toLowerCase() : '';
+                
+                return agent.includes(searchQuery) || mdn.includes(searchQuery) || symptoms.includes(searchQuery) || reason.includes(searchQuery);
+            });
+        }
+
+        // CSV Header
+        let csvContent = "\uFEFF"; // UTF-8 BOM to prevent MS Excel Mojibake
+        csvContent += "日期,時間,客服人員,通話時長(秒),掛斷狀態,話後代碼,電話(MDN),主要案件原因,次要案件原因,服務紀錄\n";
+        
+        filtered.forEach(row => {
+            const date = formatDate(row[colMap.date]);
+            const time = formatTime(row[colMap.startTime]);
+            const agent = row[colMap.agent] ? `"${row[colMap.agent].replace(/"/g, '""')}"` : '""';
+            const talk = row[colMap.talkTime] !== undefined ? row[colMap.talkTime] : '';
+            const status = row[colMap.status] ? `"${row[colMap.status].replace(/"/g, '""')}"` : '""';
+            const wrap = row[colMap.wrapUp] ? `"${row[colMap.wrapUp].replace(/"/g, '""')}"` : '""';
+            const mdn = row[colMap.mdn] ? `"${String(row[colMap.mdn]).replace(/"/g, '""')}"` : '""';
+            const reason = row[colMap.reason] ? `"${row[colMap.reason].replace(/"/g, '""')}"` : '""';
+            const subReason = row[colMap.subReason] ? `"${row[colMap.subReason].replace(/"/g, '""')}"` : '""';
+            const symptoms = row[colMap.symptoms] ? `"${String(row[colMap.symptoms]).replace(/"/g, '""')}"` : '""';
+            
+            csvContent += `${date},${time},${agent},${talk},${status},${wrap},${mdn},${reason},${subReason},${symptoms}\n`;
+        });
+        
+        // Trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        
+        let filename = `異常掛斷客服明細_${new Date().toISOString().slice(0, 10)}`;
+        if (activeFilterAgent) {
+            filename += `_${activeFilterAgent}`;
+        }
+        filename += '.csv';
+        
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showToast("💾 CSV 檔案已成功導出並下載！", "success");
+    }
+
+</script>
+</body>
+</html>
