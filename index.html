@@ -738,6 +738,9 @@
                 </div>
             </div>
             
+            <!-- Dynamic analysis breakdown -->
+            <div id="anomalyBreakdownText" class="glass-panel" style="margin-top: -0.5rem; margin-bottom: 1rem; font-size: 0.85rem; padding: 0.75rem 1rem; border-color: rgba(255,255,255,0.05); display: none; line-height: 1.6;"></div>
+            
             <div class="table-wrapper large-table-wrapper">
                 <table>
                     <thead>
@@ -745,6 +748,8 @@
                             <th style="width: 80px;">日期</th>
                             <th style="width: 90px;">開始時間</th>
                             <th style="width: 100px;">客服人員</th>
+                            <th style="width: 80px;">Carrier</th>
+                            <th style="width: 80px;">服務類型</th>
                             <th style="width: 80px;">通話時長</th>
                             <th style="width: 90px;">掛斷狀態</th>
                             <th style="width: 100px;">話後代碼</th>
@@ -944,7 +949,9 @@
                     mdn: findHeaderKey(headers, ['MDN', '電話號碼', '手機號碼', '電話']),
                     reason: findHeaderKey(headers, ['session_reason', 'Reason', '主要原因', '案件原因']),
                     subReason: findHeaderKey(headers, ['session_sub_reason', '次要原因', '次要案件原因']),
-                    symptoms: findHeaderKey(headers, ['symptoms', '服務紀錄', '備註'])
+                    symptoms: findHeaderKey(headers, ['symptoms', '服務紀錄', '備註']),
+                    carrier: findHeaderKey(headers, ['Carrier', '系統專案', '電信業者']),
+                    engagementType: findHeaderKey(headers, ['ENGAGEMENT_TYPE', '服務類型', 'Engagement Type'])
                 };
 
                 // Validate critical columns
@@ -1305,10 +1312,38 @@
         // Update count badge
         detailCount.textContent = `(符合條件：${filtered.length} 筆)`;
         
+        // Dynamic Breakdown Analysis for Carrier & Engagement Type
+        const breakdownDiv = document.getElementById('anomalyBreakdownText');
+        if (filtered.length > 0) {
+            const carriers = {};
+            const types = {};
+            filtered.forEach(row => {
+                const c = row[colMap.carrier] || '空白/未知';
+                const t = row[colMap.engagementType] || '空白/未知';
+                carriers[c] = (carriers[c] || 0) + 1;
+                types[t] = (types[t] || 0) + 1;
+            });
+            
+            const sortedCarriers = Object.entries(carriers)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `<span style="font-weight:600; color:#f8fafc;">${k}</span> (${(v/filtered.length*100).toFixed(1)}%)`);
+            
+            const sortedTypes = Object.entries(types)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => `<span style="font-weight:600; color:#f8fafc;">${k}</span> (${(v/filtered.length*100).toFixed(1)}%)`);
+                
+            breakdownDiv.innerHTML = `📊 <strong>異常案件特徵分析</strong>：
+                <span style="margin-left: 10px; color: #a78bfa; font-weight:500;">電信業者(Carrier)分佈：</span>${sortedCarriers.slice(0, 3).join(' / ')} &nbsp;|&nbsp; 
+                <span style="color: #22d3ee; font-weight:500;">服務類型(Engagement Type)分佈：</span>${sortedTypes.slice(0, 3).join(' / ')}`;
+            breakdownDiv.style.display = 'block';
+        } else {
+            breakdownDiv.style.display = 'none';
+        }
+        
         if (filtered.length === 0) {
             detailTableBody.innerHTML = `
                 <tr>
-                    <td colspan="10" class="empty-state">
+                    <td colspan="12" class="empty-state">
                         <div class="empty-state-icon">🔍</div>
                         <p>無符合當前篩選條件的異常紀錄。</p>
                     </td>
@@ -1327,6 +1362,8 @@
             const timeStr = formatTime(rawStartTime);
             
             const agent = row[colMap.agent] || '-';
+            const carrier = row[colMap.carrier] || '-';
+            const engagementType = row[colMap.engagementType] || '-';
             const talkTime = row[colMap.talkTime] !== undefined ? `${row[colMap.talkTime]} 秒` : '-';
             const status = row[colMap.status] || '-';
             const wrapUp = row[colMap.wrapUp] || '-';
@@ -1342,6 +1379,8 @@
                 <td>${dateStr}</td>
                 <td>${timeStr}</td>
                 <td style="font-weight: 500;">👤 ${agent}</td>
+                <td><span class="badge" style="background: rgba(255,255,255,0.04); color: var(--text-secondary); border: 1px solid var(--border-color);">${carrier}</span></td>
+                <td><span class="badge" style="background: rgba(6,182,212,0.1); color: #22d3ee; border: 1px solid rgba(6,182,212,0.15);">${engagementType}</span></td>
                 <td style="color: var(--danger); font-weight: 600;">⚡ ${talkTime}</td>
                 <td><span class="badge badge-danger">${status}</span></td>
                 <td>${wrapUp}</td>
@@ -1385,12 +1424,14 @@
 
         // CSV Header
         let csvContent = "\uFEFF"; // UTF-8 BOM to prevent MS Excel Mojibake
-        csvContent += "日期,時間,客服人員,通話時長(秒),掛斷狀態,話後代碼,電話(MDN),主要案件原因,次要案件原因,服務紀錄\n";
+        csvContent += "日期,時間,客服人員,電信業者(Carrier),服務類型,通話時長(秒),掛斷狀態,話後代碼,電話(MDN),主要案件原因,次要案件原因,服務紀錄\n";
         
         filtered.forEach(row => {
             const date = formatDate(row[colMap.date]);
             const time = formatTime(row[colMap.startTime]);
             const agent = row[colMap.agent] ? `"${row[colMap.agent].replace(/"/g, '""')}"` : '""';
+            const carrier = row[colMap.carrier] ? `"${String(row[colMap.carrier]).replace(/"/g, '""')}"` : '""';
+            const engagementType = row[colMap.engagementType] ? `"${String(row[colMap.engagementType]).replace(/"/g, '""')}"` : '""';
             const talk = row[colMap.talkTime] !== undefined ? row[colMap.talkTime] : '';
             const status = row[colMap.status] ? `"${row[colMap.status].replace(/"/g, '""')}"` : '""';
             const wrap = row[colMap.wrapUp] ? `"${row[colMap.wrapUp].replace(/"/g, '""')}"` : '""';
@@ -1399,7 +1440,7 @@
             const subReason = row[colMap.subReason] ? `"${row[colMap.subReason].replace(/"/g, '""')}"` : '""';
             const symptoms = row[colMap.symptoms] ? `"${String(row[colMap.symptoms]).replace(/"/g, '""')}"` : '""';
             
-            csvContent += `${date},${time},${agent},${talk},${status},${wrap},${mdn},${reason},${subReason},${symptoms}\n`;
+            csvContent += `${date},${time},${agent},${carrier},${engagementType},${talk},${status},${wrap},${mdn},${reason},${subReason},${symptoms}\n`;
         });
         
         // Trigger download
