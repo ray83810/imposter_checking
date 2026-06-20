@@ -715,19 +715,13 @@
                             <span>通話秒數閾值 (小於)</span>
                             <span class="control-val-badge"><span id="thresholdVal">10</span> 秒</span>
                         </div>
-                        <input type="range" id="thresholdSlider" class="slider" min="1" max="30" value="10">
+                        <input type="range" id="thresholdSlider" class="slider" min="1" max="60" value="10">
                     </div>
                     
                     <label class="switch-container">
                         <input type="checkbox" id="agentEndedSwitch" class="switch-input" checked>
                         <span class="switch-slider"></span>
                         <span class="switch-label-text">限掛斷狀態為 Agent Ended</span>
-                    </label>
-
-                    <label class="switch-container">
-                        <input type="checkbox" id="bypassReasonSwitch" class="switch-input">
-                        <span class="switch-slider"></span>
-                        <span class="switch-label-text" title="打勾後，將只篩選 session_reason 為 '未提供服務'、次要原因為 '斷線' 或 空白 的案件">僅過濾抽樣排除類型</span>
                     </label>
                 </div>
                 <div style="margin-top: 1.5rem;">
@@ -890,7 +884,6 @@
     const thresholdSlider = document.getElementById('thresholdSlider');
     const thresholdVal = document.getElementById('thresholdVal');
     const agentEndedSwitch = document.getElementById('agentEndedSwitch');
-    const bypassReasonSwitch = document.getElementById('bypassReasonSwitch');
     const reanalyzeBtn = document.getElementById('reanalyzeBtn');
     
     const metricTotalCalls = document.getElementById('metricTotalCalls');
@@ -1099,7 +1092,6 @@
     function analyzeData() {
         const threshold = parseInt(thresholdSlider.value);
         const limitAgentEnded = agentEndedSwitch.checked;
-        const limitBypassReason = bypassReasonSwitch.checked;
         
         let totalCalls = excelRows.length;
         let inboundCalls = 0;
@@ -1143,17 +1135,11 @@
                 // 2. Hang up checking
                 const isCorrectHangup = limitAgentEnded ? isAgentEnded : true;
                 
-                // 3. Reason checking (exclusion list: "未提供服務" / "斷線" / empty)
-                let isCorrectReason = true;
-                if (limitBypassReason) {
-                    const reason = row[colMap.reason] ? String(row[colMap.reason]).trim() : '';
-                    const subReason = row[colMap.subReason] ? String(row[colMap.subReason]).trim() : '';
-                    const isEmpty = (!reason && !subReason);
-                    const isNoService = (reason.includes("未提供") || subReason.includes("斷線"));
-                    isCorrectReason = (isEmpty || isNoService);
-                }
+                // 3. Exclude Resolved wrap up code (case insensitive)
+                const wrapUpVal = row[colMap.wrapUp] ? String(row[colMap.wrapUp]).trim().toLowerCase() : '';
+                const isNotResolved = (wrapUpVal !== 'resolved');
                 
-                if (isShortCall && isCorrectHangup && isCorrectReason) {
+                if (isShortCall && isCorrectHangup && isNotResolved) {
                     isAnomaly = true;
                 }
                 
