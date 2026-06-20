@@ -857,6 +857,17 @@
     <span id="toastMessage">這是提示訊息</span>
 </div>
 
+<!-- Modal for Full Symptoms -->
+<div id="symptomsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📝 完整服務紀錄 (Symptoms)</h3>
+            <span id="closeModal" class="close-btn">&times;</span>
+        </div>
+        <div id="modalBody" class="modal-body"></div>
+    </div>
+</div>
+
 <script>
     // State variables
     let rawWorkbook = null;
@@ -1572,17 +1583,6 @@
     }
 
 </script>
-
-<!-- Modal for Full Symptoms -->
-<div id="symptomsModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>📝 完整服務紀錄 (Symptoms)</h3>
-            <span id="closeModal" class="close-btn">&times;</span>
-        </div>
-        <div id="modalBody" class="modal-body"></div>
-    </div>
-</div>
 
 </body>
 </html>
