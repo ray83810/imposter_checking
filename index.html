@@ -596,6 +596,83 @@
 
         .toast.success { border-color: var(--success); }
         .toast.error { border-color: var(--danger); }
+
+        /* Modal Style */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(8px);
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: var(--transition-smooth);
+        }
+        
+        .modal.show {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: rgba(22, 28, 45, 0.95);
+            border: 1px solid var(--border-color-active);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 40px rgba(139, 92, 246, 0.3);
+            transform: scale(0.9);
+            transition: var(--transition-smooth);
+            overflow: hidden;
+        }
+
+        .modal.show .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        .modal-header h3 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .close-btn {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            color: var(--danger);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+            max-height: 400px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -753,7 +830,6 @@
                             <th style="width: 80px;">通話時長</th>
                             <th style="width: 90px;">掛斷狀態</th>
                             <th style="width: 100px;">話後代碼</th>
-                            <th style="width: 100px;">電話 (MDN)</th>
                             <th style="width: 120px;">主要原因</th>
                             <th style="width: 120px;">次要原因</th>
                             <th>服務紀錄 (Symptoms)</th>
@@ -872,6 +948,31 @@
         exportAnomaliesToCsv();
     });
 
+    // Modal controls
+    const symptomsModal = document.getElementById('symptomsModal');
+    const modalBody = document.getElementById('modalBody');
+    const closeModal = document.getElementById('closeModal');
+
+    closeModal.addEventListener('click', () => {
+        symptomsModal.classList.remove('show');
+        setTimeout(() => symptomsModal.style.display = 'none', 300);
+    });
+
+    window.addEventListener('click', (e) => {
+        if (e.target === symptomsModal) {
+            symptomsModal.classList.remove('show');
+            setTimeout(() => symptomsModal.style.display = 'none', 300);
+        }
+    });
+
+    function showSymptomsModal(text) {
+        modalBody.textContent = text;
+        symptomsModal.style.display = 'flex';
+        // Force reflow
+        symptomsModal.offsetHeight;
+        symptomsModal.classList.add('show');
+    }
+
     // Helper functions
     function showToast(message, type = 'info') {
         const toast = document.getElementById('toast');
@@ -947,7 +1048,7 @@
                     startTime: findHeaderKey(headers, ['START_TIME', '開始時間', '接通時間']),
                     wrapUp: findHeaderKey(headers, ['WRAP_UP_CODE', '話後代碼', '話後代號']),
                     mdn: findHeaderKey(headers, ['MDN', '電話號碼', '手機號碼', '電話']),
-                    reason: findHeaderKey(headers, ['session_reason', 'Reason', '主要原因', '案件原因']),
+                    reason: findHeaderKey(headers, ['session_reason', '主要案件原因', '案件原因']) || findHeaderKey(headers, ['Reason', '主要原因']),
                     subReason: findHeaderKey(headers, ['session_sub_reason', '次要原因', '次要案件原因']),
                     symptoms: findHeaderKey(headers, ['symptoms', '服務紀錄', '備註']),
                     carrier: findHeaderKey(headers, ['Carrier', '系統專案', '電信業者']),
@@ -1367,13 +1468,11 @@
             const talkTime = row[colMap.talkTime] !== undefined ? `${row[colMap.talkTime]} 秒` : '-';
             const status = row[colMap.status] || '-';
             const wrapUp = row[colMap.wrapUp] || '-';
-            const mdn = row[colMap.mdn] || '-';
             const reason = row[colMap.reason] || '-';
             const subReason = row[colMap.subReason] || '-';
             const symptoms = row[colMap.symptoms] || '';
             
-            // Format symptoms for rendering safely
-            const safeSymptoms = symptoms.replace(/"/g, '&quot;').replace(/\n/g, ' ');
+            const symptomsShort = symptoms.length > 25 ? `${symptoms.slice(0, 25)}...` : symptoms;
             
             tr.innerHTML = `
                 <td>${dateStr}</td>
@@ -1384,11 +1483,20 @@
                 <td style="color: var(--danger); font-weight: 600;">⚡ ${talkTime}</td>
                 <td><span class="badge badge-danger">${status}</span></td>
                 <td>${wrapUp}</td>
-                <td>${mdn}</td>
                 <td>${reason}</td>
                 <td>${subReason}</td>
-                <td class="symptoms-cell" title="${safeSymptoms}">${symptoms}</td>
+                <td class="symptoms-cell" style="cursor: pointer; color: var(--secondary);" title="點擊查看完整紀錄">
+                    <span>${symptomsShort}</span>
+                    ${symptoms ? '<span style="font-size: 0.75rem; margin-left: 4px; background: rgba(6,182,212,0.1); padding: 2px 4px; border-radius: 4px;">👁️ 查看</span>' : ''}
+                </td>
             `;
+            
+            const symptomsTd = tr.querySelector('.symptoms-cell');
+            if (symptomsTd) {
+                symptomsTd.addEventListener('click', () => {
+                    if (symptoms) showSymptomsModal(symptoms);
+                });
+            }
             
             detailTableBody.appendChild(tr);
         });
@@ -1424,7 +1532,7 @@
 
         // CSV Header
         let csvContent = "\uFEFF"; // UTF-8 BOM to prevent MS Excel Mojibake
-        csvContent += "日期,時間,客服人員,電信業者(Carrier),服務類型,通話時長(秒),掛斷狀態,話後代碼,電話(MDN),主要案件原因,次要案件原因,服務紀錄\n";
+        csvContent += "日期,時間,客服人員,電信業者(Carrier),服務類型,通話時長(秒),掛斷狀態,話後代碼,主要案件原因,次要案件原因,服務紀錄\n";
         
         filtered.forEach(row => {
             const date = formatDate(row[colMap.date]);
@@ -1435,12 +1543,11 @@
             const talk = row[colMap.talkTime] !== undefined ? row[colMap.talkTime] : '';
             const status = row[colMap.status] ? `"${row[colMap.status].replace(/"/g, '""')}"` : '""';
             const wrap = row[colMap.wrapUp] ? `"${row[colMap.wrapUp].replace(/"/g, '""')}"` : '""';
-            const mdn = row[colMap.mdn] ? `"${String(row[colMap.mdn]).replace(/"/g, '""')}"` : '""';
             const reason = row[colMap.reason] ? `"${row[colMap.reason].replace(/"/g, '""')}"` : '""';
             const subReason = row[colMap.subReason] ? `"${row[colMap.subReason].replace(/"/g, '""')}"` : '""';
             const symptoms = row[colMap.symptoms] ? `"${String(row[colMap.symptoms]).replace(/"/g, '""')}"` : '""';
             
-            csvContent += `${date},${time},${agent},${carrier},${engagementType},${talk},${status},${wrap},${mdn},${reason},${subReason},${symptoms}\n`;
+            csvContent += `${date},${time},${agent},${carrier},${engagementType},${talk},${status},${wrap},${reason},${subReason},${symptoms}\n`;
         });
         
         // Trigger download
@@ -1463,6 +1570,17 @@
         
         showToast("💾 CSV 檔案已成功導出並下載！", "success");
     }
+
+<!-- Modal for Full Symptoms -->
+<div id="symptomsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📝 完整服務紀錄 (Symptoms)</h3>
+            <span id="closeModal" class="close-btn">&times;</span>
+        </div>
+        <div id="modalBody" class="modal-body"></div>
+    </div>
+</div>
 
 </script>
 </body>
