@@ -597,6 +597,41 @@
         .toast.success { border-color: var(--success); }
         .toast.error { border-color: var(--danger); }
 
+        /* Month and Date Filter Styles */
+        .form-select, .date-input {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 0.55rem 0.75rem;
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+            width: 100%;
+            transition: var(--transition-smooth);
+            font-family: inherit;
+        }
+        
+        .form-select:focus, .date-input:focus {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.15);
+        }
+        
+        .form-select option {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .form-row > div {
+            flex: 1;
+        }
+
         /* Modal Style */
         .modal {
             display: none;
@@ -723,6 +758,32 @@
                         <span class="switch-slider"></span>
                         <span class="switch-label-text">限掛斷狀態為 Agent Ended</span>
                     </label>
+
+                    <div class="control-group" style="margin-top: 1.25rem; border-top: 1px dashed rgba(255,255,255,0.06); padding-top: 1rem;">
+                        <div class="control-label">
+                            <span>時間範圍過濾 (月份)</span>
+                        </div>
+                        <select id="monthSelect" class="form-select">
+                            <option value="all">全部月份</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group" style="margin-top: 0.75rem;">
+                        <div class="control-label">
+                            <span>日期區間</span>
+                        </div>
+                        <div class="form-row">
+                            <div>
+                                <input type="date" id="startDateInput" class="date-input">
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: center; max-width: 20px; color: var(--text-secondary); font-size: 0.85rem;">
+                                至
+                            </div>
+                            <div>
+                                <input type="date" id="endDateInput" class="date-input">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div style="margin-top: 1.5rem;">
                     <button id="reanalyzeBtn" class="btn btn-primary" style="width: 100%; justify-content: center;">🔄 重新分析</button>
@@ -872,6 +933,8 @@
     let anomalyData = [];
     let agentSummaryData = [];
     let chartInstance = null;
+    let minDataDateStr = '';
+    let maxDataDateStr = '';
 
     // DOM elements
     const uploadZone = document.getElementById('uploadZone');
@@ -885,6 +948,9 @@
     const thresholdVal = document.getElementById('thresholdVal');
     const agentEndedSwitch = document.getElementById('agentEndedSwitch');
     const reanalyzeBtn = document.getElementById('reanalyzeBtn');
+    const monthSelect = document.getElementById('monthSelect');
+    const startDateInput = document.getElementById('startDateInput');
+    const endDateInput = document.getElementById('endDateInput');
     
     const metricTotalCalls = document.getElementById('metricTotalCalls');
     const metricInboundCalls = document.getElementById('metricInboundCalls');
@@ -939,6 +1005,39 @@
             showToast("✅ 分析參數已更新！", "success");
         }
     });
+
+    monthSelect.addEventListener('change', () => {
+        syncDatesToMonth();
+        analyzeData();
+    });
+
+    startDateInput.addEventListener('change', () => {
+        monthSelect.value = 'custom';
+        analyzeData();
+    });
+
+    endDateInput.addEventListener('change', () => {
+        monthSelect.value = 'custom';
+        analyzeData();
+    });
+
+    function syncDatesToMonth() {
+        const val = monthSelect.value;
+        if (val === 'all') {
+            startDateInput.value = minDataDateStr;
+            endDateInput.value = maxDataDateStr;
+        } else if (val === 'custom') {
+            // Keep current values
+        } else {
+            const [year, month] = val.split('-');
+            const firstDay = `${year}-${month}-01`;
+            const lastDayDate = new Date(parseInt(year), parseInt(month), 0);
+            const lastDay = `${year}-${month}-${String(lastDayDate.getDate()).padStart(2, '0')}`;
+            
+            startDateInput.value = firstDay;
+            endDateInput.value = lastDay;
+        }
+    }
 
     detailSearch.addEventListener('input', () => {
         renderDetailsTable();
@@ -1074,6 +1173,70 @@
                 
                 // Reset filter
                 setAgentFilter(null);
+
+                // Find date range and unique months in the new dataset
+                let minDate = new Date(8640000000000000);
+                let maxDate = new Date(-8640000000000000);
+                const uniqueMonths = new Set();
+                
+                excelRows.forEach(row => {
+                    const rawDate = row[colMap.date];
+                    if (!rawDate) return;
+                    
+                    let d = null;
+                    if (rawDate instanceof Date) {
+                        d = rawDate;
+                    } else {
+                        d = new Date(rawDate);
+                    }
+                    
+                    if (d && !isNaN(d.getTime())) {
+                        if (d < minDate) minDate = d;
+                        if (d > maxDate) maxDate = d;
+                        
+                        const y = d.getFullYear();
+                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                        uniqueMonths.add(`${y}-${m}`);
+                    }
+                });
+
+                if (excelRows.length > 0 && minDate.getTime() < 8640000000000000) {
+                    minDataDateStr = minDate.toISOString().slice(0, 10);
+                    maxDataDateStr = maxDate.toISOString().slice(0, 10);
+                } else {
+                    minDataDateStr = '';
+                    maxDataDateStr = '';
+                }
+
+                // Populate month select dropdown
+                monthSelect.innerHTML = '<option value="all">全部月份</option>';
+                const sortedMonths = Array.from(uniqueMonths).sort();
+                sortedMonths.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.textContent = `${m.split('-')[0]} 年 ${m.split('-')[1]} 月`;
+                    monthSelect.appendChild(opt);
+                });
+                
+                if (sortedMonths.length > 0) {
+                    const opt = document.createElement('option');
+                    opt.value = 'custom';
+                    opt.textContent = '自訂區間';
+                    monthSelect.appendChild(opt);
+                }
+
+                // Set date inputs range and default values
+                if (minDataDateStr && maxDataDateStr) {
+                    startDateInput.min = minDataDateStr;
+                    startDateInput.max = maxDataDateStr;
+                    startDateInput.value = minDataDateStr;
+                    
+                    endDateInput.min = minDataDateStr;
+                    endDateInput.max = maxDataDateStr;
+                    endDateInput.value = maxDataDateStr;
+                    
+                    monthSelect.value = 'all';
+                }
                 
                 // Run analysis
                 analyzeData();
@@ -1093,7 +1256,12 @@
         const threshold = parseInt(thresholdSlider.value);
         const limitAgentEnded = agentEndedSwitch.checked;
         
-        let totalCalls = excelRows.length;
+        const startVal = startDateInput.value;
+        const endVal = endDateInput.value;
+        const startDate = startVal ? new Date(startVal + 'T00:00:00') : null;
+        const endDate = endVal ? new Date(endVal + 'T23:59:59') : null;
+        
+        let totalCalls = 0;
         let inboundCalls = 0;
         anomalyData = [];
         
@@ -1101,6 +1269,24 @@
         const agentStats = {};
         
         excelRows.forEach(row => {
+            // Apply date range filter
+            const rawDate = row[colMap.date];
+            if (rawDate) {
+                let d = null;
+                if (rawDate instanceof Date) {
+                    d = rawDate;
+                } else {
+                    d = new Date(rawDate);
+                }
+                
+                if (d && !isNaN(d.getTime())) {
+                    if (startDate && d < startDate) return;
+                    if (endDate && d > endDate) return;
+                }
+            }
+            
+            totalCalls++;
+            
             const agent = row[colMap.agent] ? String(row[colMap.agent]).trim() : '';
             if (!agent) return;
             
