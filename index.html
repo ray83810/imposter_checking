@@ -924,6 +924,48 @@
 </div>
 
 <script>
+    // Robust Excel date parser
+    function parseExcelDate(rawVal) {
+        if (rawVal === undefined || rawVal === null) return null;
+        if (rawVal instanceof Date) {
+            return isNaN(rawVal.getTime()) ? null : rawVal;
+        }
+        if (typeof rawVal === 'number') {
+            // Excel serial dates: 30000 corresponds to 1982-02-18, 60000 is 2064-01-24
+            if (rawVal > 30000 && rawVal < 60000) {
+                const utcDays = rawVal - 25569;
+                const msPerDay = 24 * 60 * 60 * 1000;
+                const d = new Date(utcDays * msPerDay);
+                const tzOffset = d.getTimezoneOffset() * 60 * 1000;
+                const localDate = new Date(d.getTime() + tzOffset);
+                return isNaN(localDate.getTime()) ? null : localDate;
+            }
+            if (rawVal > 100000000000) {
+                const d = new Date(rawVal);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            return null;
+        }
+        if (typeof rawVal === 'string') {
+            const s = rawVal.trim();
+            if (!s) return null;
+            const parsed = Date.parse(s);
+            if (!isNaN(parsed)) {
+                return new Date(parsed);
+            }
+            const match = s.match(/^(\d{4})[./-]?(\d{2})[./-]?(\d{2})/);
+            if (match) {
+                const y = parseInt(match[1]);
+                const m = parseInt(match[2]) - 1;
+                const d = parseInt(match[3]);
+                const testDate = new Date(y, m, d);
+                return isNaN(testDate.getTime()) ? null : testDate;
+            }
+        }
+        const fallback = new Date(rawVal);
+        return isNaN(fallback.getTime()) ? null : fallback;
+    }
+
     // State variables
     let rawWorkbook = null;
     let excelRows = [];
@@ -1181,16 +1223,9 @@
                 
                 excelRows.forEach(row => {
                     const rawDate = row[colMap.date];
-                    if (!rawDate) return;
+                    const d = parseExcelDate(rawDate);
                     
-                    let d = null;
-                    if (rawDate instanceof Date) {
-                        d = rawDate;
-                    } else {
-                        d = new Date(rawDate);
-                    }
-                    
-                    if (d && !isNaN(d.getTime())) {
+                    if (d) {
                         if (d < minDate) minDate = d;
                         if (d > maxDate) maxDate = d;
                         
@@ -1271,18 +1306,10 @@
         excelRows.forEach(row => {
             // Apply date range filter
             const rawDate = row[colMap.date];
-            if (rawDate) {
-                let d = null;
-                if (rawDate instanceof Date) {
-                    d = rawDate;
-                } else {
-                    d = new Date(rawDate);
-                }
-                
-                if (d && !isNaN(d.getTime())) {
-                    if (startDate && d < startDate) return;
-                    if (endDate && d > endDate) return;
-                }
+            const d = parseExcelDate(rawDate);
+            if (d) {
+                if (startDate && d < startDate) return;
+                if (endDate && d > endDate) return;
             }
             
             totalCalls++;
@@ -1542,22 +1569,22 @@
 
     // Format Excel datetime objects/dates
     function formatDate(cellValue) {
-        if (!cellValue) return '-';
-        if (cellValue instanceof Date) {
-            return cellValue.toISOString().slice(0, 10);
-        }
-        if (typeof cellValue === 'string') {
-            // Maybe contains datetime
-            return cellValue.split(' ')[0] || cellValue;
-        }
-        return String(cellValue);
+        const d = parseExcelDate(cellValue);
+        if (!d) return '-';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
     }
 
     function formatTime(cellValue) {
         if (!cellValue) return '-';
-        if (cellValue instanceof Date) {
-            return cellValue.toTimeString().slice(0, 8);
+        
+        const d = parseExcelDate(cellValue);
+        if (d) {
+            return d.toTimeString().slice(0, 8);
         }
+        
         if (typeof cellValue === 'string') {
             return cellValue.includes(' ') ? cellValue.split(' ')[1] : cellValue;
         }
